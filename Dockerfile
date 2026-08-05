@@ -104,8 +104,9 @@ RUN curl --fail --location \
     rm -rf /tmp/maude.zip /tmp/maude-extracted
 
 ENV MAUDE_LIB=/opt/maude \
-    LC_ALL=C \
-    LANG=C
+    GHC_CHARENC=UTF-8 \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8
 
 COPY --from=builder /out/tamarin-prover /usr/local/bin/tamarin-prover
 
