@@ -60,7 +60,7 @@ At the end of a successful execution, the validator should report:
 Validation successful: 20 expected result(s) found.
 ```
 
-The reference execution used Ubuntu 24.04.4 LTS, four Intel Xeon Gold 6526Y CPU cores, and 64 GiB of RAM. The complete verification took approximately 15 min 45.35 s. Runtime is hardware-dependent; the reproducible outcomes are the verified lemma results, not identical execution times.
+The reference execution used Ubuntu 24.04.4 LTS, four Intel Xeon Gold 6526Y CPU cores, and a total of 64 GiB of available RAM. The complete verification took approximately 15 min 45.35 s. Runtime is hardware-dependent; the reproducible outcomes are the verified lemma results, not identical execution times.
 
 ## Run the models separately
 
