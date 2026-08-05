@@ -135,12 +135,4 @@ Verify that the distributed models are identical to the reviewed versions:
 make check-models
 ```
 
-## Releasing the artifact
-
-For an immutable citation target, create an annotated Git tag and GitHub Release after testing from a clean clone:
-
-```bash
-git tag -a v1.0.0 -m "Reproducible artifact v1.0.0"
-git push origin v1.0.0
-```
 
