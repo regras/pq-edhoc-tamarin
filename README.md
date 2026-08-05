@@ -9,6 +9,16 @@ The models represent pairwise UAV–GCS and UAV–UAV executions of a post-quant
 ### Paper abstract
 > *Unmanned Aerial Vehicle (UAV) swarms require secure and efficient protocols for communication in dynamic and adversarial environments. This paper presents a post-quantum authenticated key exchange protocol for UAV swarm communications, inspired by recent post-quantum extensions of EDHOC. The protocol is modeled in SAPIC+ and verified in the Tamarin Prover under a Dolev–Yao adversary, establishing executability, mutual authentication, key secrecy, and forward secrecy properties. Communication overhead and handshake latency are evaluated using standardized parameter sizes and benchmark data for ARM Cortex-M4 and x86 platforms, showing how the choice of post-quantum primitives affects the feasibility of authenticated key exchange in constrained UAV deployments.* 
 
+### Badges sought
+
+The four badges sought are:
+
+* **Available:** The complete artifact is publicly available in this stable GitHub repository.
+* **Functional:** The repository provides pinned dependencies, a Docker environment, execution instructions, and a minimal test.
+* **Sustainable:** The models and scripts are modular, documented, and organized so that the paper’s claims can be readily identified.
+* **Reproducible:** The workflows automate the experiments and validate all 20 expected verification results.
+
+
 ## Artifact contents
 
 | File | Purpose |
@@ -73,7 +83,7 @@ Core model:
 make core
 ```
 
-Forward-secrecy and KCI model:
+Forward secrecy, UKS, and KCI model:
 
 ```bash
 make fs-kci
@@ -137,5 +147,12 @@ Verify that the distributed models are identical to the reviewed versions:
 ```bash
 make check-models
 ```
+## Security considerations
 
+The artifact contains symbolic protocol models and does not process real cryptographic keys, credentials, personal data, or network traffic.
 
+The verification is CPU- and RAM-intensive and may temporarily consume substantial host resources. Reviewers should execute it on a machine with sufficient available memory and avoid running it alongside critical workloads.
+
+## License 
+
+This artifact is distributed under the GNU General Public License, v3. See the LICENSE file for the complete license information.
