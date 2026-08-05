@@ -1,0 +1,564 @@
+/*
+ * Core symbolic model for the post-quantum EDHOC variant described in:
+ * "Design, Formal Verification, and Evaluation of a Post-Quantum EDHOC
+ *  Variant for UAV Communications".
+ *
+ * Protocol scope
+ * --------------
+ * The model represents a pairwise UAV-GCS or UAV-UAV execution of EDHOC
+ * Method 0. The initiator and responder authenticate with CA-certified
+ * long-term signature keys. They establish an ephemeral shared secret with a
+ * KEM, derive separate AEAD keys and IVs for messages 2 and 3, and derive a
+ * final output key from the completed transcript.
+ *
+ * Symbolic assumptions
+ * --------------------
+ * - Cryptographic primitives are ideal constructors/destructors in the
+ *   Dolev-Yao model. An operation succeeds only when one of the equations
+ *   below applies; computational attacks, side channels, and implementation
+ *   failures are outside this model.
+ * - Every in(...) and out(...) uses the adversary-controlled public network.
+ *   The adversary may intercept, replay, reorder, modify, and synthesize any
+ *   message it can derive from its current knowledge.
+ * - This core theory has no key-reveal or compromise rules. Consequently, its
+ *   secrecy lemmas concern executions in which the CA, long-term signing keys,
+ *   ephemeral KEM secret keys, and KEM shared secrets remain uncompromised.
+ */
+
+theory pq_edhoc_core_model
+
+begin
+
+/*
+ * Public function symbols.
+ *
+ * Arity-zero symbols represent public protocol constants. In particular,
+ * method_zero and cipher_suite identify the negotiated method/suite, while
+ * the length constants distinguish the requested KDF output sizes. The symbol
+ * true is the unique successful result expected from signature verification.
+ */
+functions:
+  method_zero/0,
+  cipher_suite/0,
+  hash_length/0,
+  key_length/0,
+  iv_length/0,
+  true/0,
+
+  /*
+   * KEM abstraction:
+   *   kempk(sk)          derives a public encapsulation key;
+   *   kemencap(ss, pk)   encapsulates the fresh shared secret ss to pk;
+   *   kemdecap(ct, sk)   recovers ss only for the matching secret key.
+   *
+   * kemdecap is a destructor: a process that cannot reduce it with the KEM
+   * equation below cannot continue past the enclosing let-binding.
+   */
+  kempk/1,
+  kemencap/2,
+  kemdecap/2 [destructor],
+
+  /*
+   * Signature abstraction. sign binds a message and an explicit context tag
+   * to a signing key. The context provides domain separation between
+   * certificates, message-2 signatures, and message-3 signatures.
+   */
+  sign/3,
+  pk/1,
+  sigverify/4 [destructor],
+
+  /*
+   * Hash and key derivation. hash is a free one-way constructor.
+   * hkdfextract models extraction from a transcript-dependent salt and KEM
+   * secret. edhoc_kdf models labeled expansion from a PRK, transcript context,
+   * and requested output length.
+   */
+  hash/1,
+  hkdfextract/2,
+  edhoc_kdf/4,
+
+  /*
+   * Ideal authenticated encryption. The four arguments are plaintext, key,
+   * IV, and associated data. Decryption succeeds only when all four encryption
+   * parameters match, thereby modeling confidentiality and integrity together.
+   */
+  aeadenc/4,
+  aeaddec/4 [destructor]
+
+/*
+ * Correctness equations for honest cryptographic operations.
+ *
+ * There are deliberately no equations for extracting a secret key, forging a
+ * signature, inverting a hash/KDF, or decrypting with a wrong key, IV, or
+ * associated-data value. Failed destructor reduction blocks that execution.
+ */
+equations:
+  kemdecap(kemencap(ss, kempk(sk)), sk) = ss,
+  sigverify(sign(m, ctx, sk), m, ctx, pk(sk)) = true,
+  aeaddec(aeadenc(m, k, iv, ad), k, iv, ad) = m
+
+/* ----------------------------------------------------------------------- */
+/* Initiator: UAV                                                          */
+/* ----------------------------------------------------------------------- */
+
+let Initiator(~skI, CERT_I_own, pkCA_I) =
+  /*
+   * Parameters:
+   *   ~skI        initiator's private long-term signing key;
+   *   CERT_I_own  CA-signed certificate containing pk(~skI);
+   *   pkCA_I      CA public key trusted by the initiator.
+   *
+   * C_I and EAD_1_I are supplied through the public network. They represent
+   * the initiator connection identifier and optional external authorization
+   * data carried in message 1; the core model imposes no trust on either value.
+   */
+  in(<C_I, EAD_1_I>);
+
+  /* Each local run receives a fresh trace identifier, KEM key pair, and EAD_3. */
+  new ~sidI;
+  new ~skKEM;
+  new ~EAD_3;
+
+  /* Public identity key recorded in authentication events. */
+  let pkI_own = pk(~skI) in
+
+  /*
+   * Message 1: advertise method/suite and the fresh KEM public key.
+   * TH_1 commits to the entire first message, including C_I and EAD_1_I.
+   */
+  let pkKEM_I = kempk(~skKEM) in
+  let m1_I = <method_zero, cipher_suite, pkKEM_I, C_I, EAD_1_I> in
+  let TH_1_I = hash(m1_I) in
+  out(m1_I);
+
+  /*
+   * Message 2: receive the responder's KEM ciphertext and encrypted
+   * authentication data. TH_2 extends TH_1 with the KEM ciphertext; it is both
+   * the extraction salt and the associated data for CIPHERTEXT_2_I.
+   */
+  in(m2_I);
+  let <ctKEM_I, CIPHERTEXT_2_I> = m2_I in
+  let TH_2_I = hash(<TH_1_I, ctKEM_I>) in
+
+  /*
+   * Decapsulation establishes the ephemeral shared secret. The derived K_2_I
+   * and IV_2_I use different labels and lengths.
+   */
+  let ss_I = kemdecap(ctKEM_I, ~skKEM) in
+  let PRK_2e_I = hkdfextract(TH_2_I, ss_I) in
+  let K_2_I = edhoc_kdf(PRK_2e_I, 'k_2', TH_2_I, key_length) in
+  let IV_2_I = edhoc_kdf(PRK_2e_I, 'iv_2', TH_2_I, iv_length) in
+
+  /*
+   * Authenticated decryption checks the key, IV, and TH_2 associated data.
+   * Successful parsing yields the responder certificate, its protocol
+   * signature, and EAD_2. Failure at decryption stops the run.
+   */
+  let PLAINTEXT_2_I = aeaddec(
+    CIPHERTEXT_2_I,
+    K_2_I,
+    IV_2_I,
+    TH_2_I
+  ) in
+  let <CERT_R_peer, SIGNATURE_2_peer, EAD_2_I> = PLAINTEXT_2_I in
+  let <ID_R_peer, pkR_peer, CERT_SIGNATURE_R_peer> = CERT_R_peer in
+
+  /* Verify that the trusted CA bound ID_R_peer to pkR_peer. */
+  let true = sigverify(
+    CERT_SIGNATURE_R_peer,
+    <ID_R_peer, pkR_peer>,
+    'certificate',
+    pkCA_I
+  ) in
+
+  /*
+   * Verify responder possession of the certified private key. The signature
+   * binds its certificate and EAD_2 to this session's TH_2 transcript.
+   */
+  let SIG_MSG_2_I = <CERT_R_peer, TH_2_I, EAD_2_I> in
+  let true = sigverify(
+    SIGNATURE_2_peer,
+    SIG_MSG_2_I,
+    'signature_2',
+    pkR_peer
+  ) in
+
+  /*
+   * Message 3: authenticate the initiator.
+   * TH_3 commits to the authenticated plaintext of message 2. The initiator
+   * signs its own certificate, TH_3, and fresh EAD_3 under a message-specific
+   * context tag, then encrypts the resulting plaintext with TH_3 as AD.
+   */
+  let TH_3_I = hash(<TH_2_I, PLAINTEXT_2_I>) in
+  let SIG_MSG_3_I = <CERT_I_own, TH_3_I, ~EAD_3> in
+  let SIGNATURE_3_I = sign(SIG_MSG_3_I, 'signature_3', ~skI) in
+  let PLAINTEXT_3_I = <CERT_I_own, SIGNATURE_3_I, ~EAD_3> in
+
+  /* Message 3 uses independently labeled AEAD key and IV derivations. */
+  let K_3_I = edhoc_kdf(PRK_2e_I, 'k_3', TH_3_I, key_length) in
+  let IV_3_I = edhoc_kdf(PRK_2e_I, 'iv_3', TH_3_I, iv_length) in
+  let CIPHERTEXT_3_I = aeadenc(
+    PLAINTEXT_3_I,
+    K_3_I,
+    IV_3_I,
+    TH_3_I
+  ) in
+
+  /*
+   * TH_4 represents the completed authenticated transcript. PRK_out_I is the
+   * session output key and is separated from traffic keys by the 'prk_out'
+   * label and the hash_length output-size parameter.
+   */
+  let TH_4_I = hash(<TH_3_I, PLAINTEXT_3_I>) in
+  let PRK_out_I = edhoc_kdf(
+    PRK_2e_I,
+    'prk_out',
+    TH_4_I,
+    hash_length
+  ) in
+
+  /*
+   * CommitI records the peer identity and final transcript at initiator
+   * completion. AcceptI additionally exposes intermediate transcript hashes
+   * and PRK_out to the trace logic. These values are not revealed on the
+   * network: event arguments are available to lemmas, not to the adversary.
+   * The ciphertext is sent only after all responder checks have succeeded.
+   */
+  event CommitI(~sidI, pkI_own, pkR_peer, TH_4_I);
+  event AcceptI(
+    ~sidI,
+    pkI_own,
+    pkR_peer,
+    TH_2_I,
+    TH_3_I,
+    TH_4_I,
+    PRK_out_I
+  );
+  out(CIPHERTEXT_3_I);
+  0
+
+/* ----------------------------------------------------------------------- */
+/* Responder: GCS or peer UAV                                              */
+/* ----------------------------------------------------------------------- */
+
+let Responder(~skR, CERT_R_own, pkCA_R) =
+  /*
+   * Parameters mirror the initiator's long-term credentials. EAD_2_R is read
+   * from the public network and is therefore attacker/environment controlled;
+   * the responder nevertheless signs it into the session transcript.
+   */
+  in(EAD_2_R);
+
+  /* Fresh trace identifier and fresh KEM shared secret for this responder run. */
+  new ~sidR;
+  new ~ss;
+
+  /* Public identity key recorded in responder events. */
+  let pkR_own = pk(~skR) in
+
+  /*
+   * Message 1: require the expected method and cipher-suite constants while
+   * extracting the initiator's KEM key, connection identifier, and EAD_1.
+   * Constant-pattern matching rejects messages for another method or suite.
+   */
+  in(m1_R);
+  let <method_zero, cipher_suite, pkKEM_R, C_I_R, EAD_1_R> = m1_R in
+  let TH_1_R = hash(m1_R) in
+
+  /*
+   * Message 2: encapsulate the fresh shared secret to the initiator's KEM
+   * public key, extend the transcript to TH_2, and derive the common PRK.
+   */
+  let ctKEM_R = kemencap(~ss, pkKEM_R) in
+  let TH_2_R = hash(<TH_1_R, ctKEM_R>) in
+  let PRK_2e_R = hkdfextract(TH_2_R, ~ss) in
+
+  /*
+   * Authenticate the responder by signing its certificate, TH_2, and EAD_2.
+   * The certificate itself binds the responder identity to pkR_own through CA
+   * certification, while this signature proves possession of ~skR.
+   */
+  let SIG_MSG_2_R = <CERT_R_own, TH_2_R, EAD_2_R> in
+  let SIGNATURE_2_R = sign(SIG_MSG_2_R, 'signature_2', ~skR) in
+  let PLAINTEXT_2_R = <CERT_R_own, SIGNATURE_2_R, EAD_2_R> in
+
+  /* Protect message-2 authentication data with TH_2 as associated data. */
+  let K_2_R = edhoc_kdf(PRK_2e_R, 'k_2', TH_2_R, key_length) in
+  let IV_2_R = edhoc_kdf(PRK_2e_R, 'iv_2', TH_2_R, iv_length) in
+  let CIPHERTEXT_2_R = aeadenc(
+    PLAINTEXT_2_R,
+    K_2_R,
+    IV_2_R,
+    TH_2_R
+  ) in
+  let m2_R = <ctKEM_R, CIPHERTEXT_2_R> in
+
+  /*
+   * RunningR marks that the responder constructed a valid message 2 for this
+   * TH_2/TH_3 transcript. It does not yet mean the initiator was authenticated;
+   * responder acceptance occurs only after validating message 3.
+   */
+  let TH_3_R = hash(<TH_2_R, PLAINTEXT_2_R>) in
+  event RunningR(~sidR, pkR_own, TH_2_R, TH_3_R);
+  out(m2_R);
+
+  /*
+   * Message 3: derive the independently labeled message-3 AEAD parameters and
+   * decrypt using TH_3 as associated data. Any mismatch blocks the run.
+   */
+  in(CIPHERTEXT_3_R);
+  let K_3_R = edhoc_kdf(PRK_2e_R, 'k_3', TH_3_R, key_length) in
+  let IV_3_R = edhoc_kdf(PRK_2e_R, 'iv_3', TH_3_R, iv_length) in
+  let PLAINTEXT_3_R = aeaddec(
+    CIPHERTEXT_3_R,
+    K_3_R,
+    IV_3_R,
+    TH_3_R
+  ) in
+
+  /* Parse the initiator's certificate, protocol signature, and EAD_3. */
+  let <CERT_I_peer, SIGNATURE_3_peer, EAD_3_R> = PLAINTEXT_3_R in
+  let <ID_I_peer, pkI_peer, CERT_SIGNATURE_I_peer> = CERT_I_peer in
+
+  /* Verify that the trusted CA bound ID_I_peer to pkI_peer. */
+  let true = sigverify(
+    CERT_SIGNATURE_I_peer,
+    <ID_I_peer, pkI_peer>,
+    'certificate',
+    pkCA_R
+  ) in
+
+  /*
+   * Verify initiator possession of the certified signing key and bind the
+   * certificate/EAD_3 to the responder's locally computed TH_3 transcript.
+   */
+  let SIG_MSG_3_R = <CERT_I_peer, TH_3_R, EAD_3_R> in
+  let true = sigverify(
+    SIGNATURE_3_peer,
+    SIG_MSG_3_R,
+    'signature_3',
+    pkI_peer
+  ) in
+
+  /* Reconstruct the final transcript and derive the responder's output key. */
+  let TH_4_R = hash(<TH_3_R, PLAINTEXT_3_R>) in
+  let PRK_out_R = edhoc_kdf(
+    PRK_2e_R,
+    'prk_out',
+    TH_4_R,
+    hash_length
+  ) in
+
+  /*
+   * CommitR and AcceptR record responder completion after both CA and protocol
+   * signatures have verified. As on the initiator, event data is trace-only
+   * and is not automatically disclosed to the adversary.
+   */
+  event CommitR(~sidR, pkI_peer, pkR_own, TH_4_R);
+  event AcceptR(
+    ~sidR,
+    pkI_peer,
+    pkR_own,
+    TH_2_R,
+    TH_3_R,
+    TH_4_R,
+    PRK_out_R
+  );
+  0
+
+/* ----------------------------------------------------------------------- */
+/* Certification authority and protocol environment                        */
+/* ----------------------------------------------------------------------- */
+
+process:
+  /*
+   * Create one uncompromised CA and one long-term identity for each role.
+   * These values are generated once, outside replication, so all replicated
+   * sessions use the same certified initiator/responder identity pair.
+   */
+  new skCA_env;
+  new skI_env;
+  new skR_env;
+  new ID_I_env;
+  new ID_R_env;
+
+  /* Derive the public verification keys from the private signing keys. */
+  let pkCA_env = pk(skCA_env) in
+  let pkI_env = pk(skI_env) in
+  let pkR_env = pk(skR_env) in
+
+  /*
+   * A certificate is the tuple <identity, public key, CA signature>. The
+   * 'certificate' context prevents these signatures from being accepted as
+   * protocol-message signatures.
+   */
+  let CERT_SIGNATURE_I_env = sign(
+    <ID_I_env, pkI_env>,
+    'certificate',
+    skCA_env
+  ) in
+  let CERT_SIGNATURE_R_env = sign(
+    <ID_R_env, pkR_env>,
+    'certificate',
+    skCA_env
+  ) in
+  let CERT_I_env = <ID_I_env, pkI_env, CERT_SIGNATURE_I_env> in
+  let CERT_R_env = <ID_R_env, pkR_env, CERT_SIGNATURE_R_env> in
+
+  /*
+   * Publicly distribute the CA key and both certificates, as in a public-key
+   * infrastructure. This does not reveal skCA_env, skI_env, or skR_env.
+   */
+  out(<pkCA_env, CERT_I_env, CERT_R_env>);
+
+  /* Unbounded, concurrent initiator and responder sessions. */
+  (
+    !(Initiator(skI_env, CERT_I_env, pkCA_env))
+    |
+    !(Responder(skR_env, CERT_R_env, pkCA_env))
+  )
+
+/* ----------------------------------------------------------------------- */
+/* Security properties                                                     */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * Non-injective initiator-to-responder agreement.
+ * If an initiator accepts, some responder must previously have reached
+ * RunningR with the same responder key and TH_2/TH_3 transcript. RunningR is
+ * emitted before message 2, so this establishes responder participation but
+ * does not require that the matching responder has accepted message 3.
+ */
+lemma agreement_I_to_R:
+  "All sidI pkI pkR th2 th3 th4 k #i.
+     AcceptI(sidI, pkI, pkR, th2, th3, th4, k) @ #i
+     ==> Ex sidR #j.
+           RunningR(sidR, pkR, th2, th3) @ #j
+         & #j < #i"
+
+/*
+ * Responder-to-initiator agreement on the complete accepting state.
+ * Every responder acceptance must be preceded by an initiator acceptance with
+ * the same identities, transcript hashes, and output key. 
+ */
+lemma agreement_R_to_I:
+  "All sidR pkI pkR th2 th3 th4 k #i.
+     AcceptR(sidR, pkI, pkR, th2, th3, th4, k) @ #i
+     ==> Ex sidI #j.
+           AcceptI(sidI, pkI, pkR, th2, th3, th4, k) @ #j
+         & #j < #i"
+
+/*
+ * Commit-level responder-to-initiator agreement.
+ * A responder committing to (pkI, pkR, TH_4) implies a prior initiator commit
+ * to exactly that identity pair and completed transcript.
+ */
+lemma commit_agreement_R_to_I:
+  "All sidR pkI pkR th4 #i.
+     CommitR(sidR, pkI, pkR, th4) @ #i
+     ==> Ex sidI #j.
+           CommitI(sidI, pkI, pkR, th4) @ #j
+         & #j < #i"
+
+/*
+ * Conditional key consistency.
+ * Whenever both roles accept with the same identities and transcript hashes,
+ * their derived PRK_out values are equal. The agreement lemmas establish when
+ * such matching accept events must exist.
+ */
+lemma key_agreement:
+  "All sidI sidR pkI pkR th2 th3 th4 kI kR #i #j.
+     AcceptI(sidI, pkI, pkR, th2, th3, th4, kI) @ #i
+   & AcceptR(sidR, pkI, pkR, th2, th3, th4, kR) @ #j
+     ==> kI = kR"
+
+/*
+ * Initiator output-key secrecy in the uncompromised core model.
+ * After any AcceptI event, there is no trace position at which the Dolev-Yao
+ * adversary knows that PRK_out value. K(k) is Tamarin's adversary-knowledge
+ * fact; the quantification covers positions before and after acceptance.
+ */
+lemma secrecy_PRK_out_I:
+  "All sid pkI pkR th2 th3 th4 k #i.
+     AcceptI(sid, pkI, pkR, th2, th3, th4, k) @ #i
+     ==> not (Ex #j. K(k) @ #j)"
+
+/* Responder-side counterpart of secrecy_PRK_out_I. */
+lemma secrecy_PRK_out_R:
+  "All sid pkI pkR th2 th3 th4 k #i.
+     AcceptR(sid, pkI, pkR, th2, th3, th4, k) @ #i
+     ==> not (Ex #j. K(k) @ #j)"
+
+/*
+ * Uniqueness of initiator acceptance records.
+ * Two AcceptI events with the same identities, transcript, and output key must
+ * be the same session/event. 
+ */
+lemma freshness_AcceptI:
+  "All sid1 sid2 pkI pkR th2 th3 th4 k #i #j.
+     AcceptI(sid1, pkI, pkR, th2, th3, th4, k) @ #i
+   & AcceptI(sid2, pkI, pkR, th2, th3, th4, k) @ #j
+     ==> sid1 = sid2 & #i = #j"
+
+/* Responder-side uniqueness of the complete AcceptR record. */
+lemma freshness_AcceptR:
+  "All sid1 sid2 pkI pkR th2 th3 th4 k #i #j.
+     AcceptR(sid1, pkI, pkR, th2, th3, th4, k) @ #i
+   & AcceptR(sid2, pkI, pkR, th2, th3, th4, k) @ #j
+     ==> sid1 = sid2 & #i = #j"
+
+/* Uniqueness of initiator commits for a fixed identity pair and TH_4. */
+lemma freshness_CommitI:
+  "All sid1 sid2 pkI pkR th4 #i #j.
+     CommitI(sid1, pkI, pkR, th4) @ #i
+   & CommitI(sid2, pkI, pkR, th4) @ #j
+     ==> sid1 = sid2 & #i = #j"
+
+/* Uniqueness of responder commits for a fixed identity pair and TH_4. */
+lemma freshness_CommitR:
+  "All sid1 sid2 pkI pkR th4 #i #j.
+     CommitR(sid1, pkI, pkR, th4) @ #i
+   & CommitR(sid2, pkI, pkR, th4) @ #j
+     ==> sid1 = sid2 & #i = #j"
+
+/*
+ * Injective responder-to-initiator commit agreement.
+ * If two responder commits correspond to one initiator commit on the same
+ * identities and TH_4, they must be the same responder session/event. Together
+ * with commit_agreement_R_to_I, this rules out mapping multiple responder
+ * completions to a single matching initiator completion.
+ */
+lemma injective_agreement_R_to_I:
+  "All sidR1 sidR2 sidI pkI pkR th4 #i1 #i2 #j.
+     CommitR(sidR1, pkI, pkR, th4) @ #i1
+   & CommitR(sidR2, pkI, pkR, th4) @ #i2
+   & CommitI(sidI, pkI, pkR, th4) @ #j
+     ==> sidR1 = sidR2 & #i1 = #i2"
+
+/*
+ * No reuse of an initiator output key across distinct accepting sessions.
+ * If two AcceptI events contain the same PRK_out for the same identity pair,
+ * then their session identifiers, final transcripts, and event positions are
+ * equal. 
+ */
+lemma session_key_independence:
+  "All sid1 sid2 pkI pkR th2_1 th3_1 th4_1
+       th2_2 th3_2 th4_2 k #i #j.
+     AcceptI(sid1, pkI, pkR, th2_1, th3_1, th4_1, k) @ #i
+   & AcceptI(sid2, pkI, pkR, th2_2, th3_2, th4_2, k) @ #j
+     ==> sid1 = sid2 & th4_1 = th4_2 & #i = #j"
+
+/*
+ * Executability.
+ * At least one trace contains matching initiator and responder acceptances on
+ * the identities, transcript hashes, and output key. Proving this prevents the
+ * universal security lemmas from holding merely because no honest run can
+ * complete.
+ */
+lemma executable_full_run:
+  exists-trace
+  "Ex sidI sidR pkI pkR th2 th3 th4 k #i #j.
+     AcceptI(sidI, pkI, pkR, th2, th3, th4, k) @ #i
+   & AcceptR(sidR, pkI, pkR, th2, th3, th4, k) @ #j"
+
+end

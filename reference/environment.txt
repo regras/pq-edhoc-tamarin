@@ -1,0 +1,13 @@
+Reference verification environment
+==================================
+
+Tamarin Prover: 1.13.0
+Maude: 3.5.1
+Tamarin Git revision: 3a523146116a70f1ee815401fb67ed6335baf44f
+Operating system: Ubuntu 24.04.4 LTS
+Processors: four Intel Xeon Gold 6526Y CPU cores
+Memory: 64 GiB RAM
+Reported complete verification time: 15 min 45.35 s
+
+Execution time is hardware-dependent and is not an expected bit-for-bit result.
+The expected logical results are listed in expected/claims.tsv.
