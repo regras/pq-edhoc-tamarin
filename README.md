@@ -62,7 +62,7 @@ Validation successful: 20 expected result(s) found.
 
 The reference execution used Ubuntu 24.04.4 LTS, four Intel Xeon Gold 6526Y CPU cores, and a total of 64 GiB of available RAM. The complete verification took approximately 15 min 45.35 s. Runtime is hardware-dependent; the reproducible outcomes are the verified lemma results, not identical execution times.
 
-## Run the models separately
+## Running the models separately
 
 Core model:
 
@@ -106,7 +106,7 @@ Use `core`, `fs-kci`, or `versions` in place of `all` to select another operatio
 The container invokes the core model as follows:
 
 ```bash
-tamarin-prover models/pq_edhoc_uav_method0.spthy \
+tamarin-prover models/pq_edhoc_core_model.spthy \
   --prove \
   --heuristic=S \
   --derivcheck-timeout=240 \
@@ -117,7 +117,7 @@ tamarin-prover models/pq_edhoc_uav_method0.spthy \
 The compromise-aware model uses the same options:
 
 ```bash
-tamarin-prover models/pq_edhoc_uav_method0_fs_kci.spthy \
+tamarin-prover models/pq_edhoc_compromise_model.spthy \
   --prove \
   --heuristic=S \
   --derivcheck-timeout=240 \
