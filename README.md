@@ -23,12 +23,12 @@ The models represent pairwise UAV–GCS and UAV–UAV executions of a post-quant
 | --- | --- |
 | Node.js build stage | 20.19.5 |
 | Tamarin Prover | 1.13.0 |
-| Tamarin Git revision | `3a523146116a70f1ee815401fb67ed6335baf44f` |
+| Tamarin Git revision* | `3a523146116a70f1ee815401fb67ed6335baf44f` |
 | Maude | 3.5.1 |
 | Maude Linux archive SHA-256 | `72ed1ca87e3b3d0dfc6ee1436baf154bf04c45ff97d521bec040c5e8dfc8f92c` |
 | Container runtime | Ubuntu 24.04 |
 
-The full Git revision is pinned because the version number alone does not uniquely identify a development build of Tamarin.
+*The full Git revision is pinned because the version number alone does not uniquely identify a development build of Tamarin.
 
 ## Requirements
 
