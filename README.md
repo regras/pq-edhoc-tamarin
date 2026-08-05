@@ -149,9 +149,9 @@ make check-models
 ```
 ## Security considerations
 
-The artifact contains symbolic protocol models and does not process real cryptographic keys, credentials, personal data, or network traffic.
+The artifact is intended solely for scientific research and reproducibility and should not be used for operational deployment. The symbolic protocol models do not process real cryptographic keys, credentials, personal data, or network traffic.
 
-The verification is CPU- and RAM-intensive and may temporarily consume substantial host resources. Reviewers should execute it on a machine with sufficient available memory and avoid running it alongside critical workloads.
+The verification process makes intensive use of CPU and RAM; therefore, it may temporarily consume substantial host resources. Reviewers should execute it on a machine with sufficient available memory and avoid running it alongside critical workloads.
 
 ## License 
 
