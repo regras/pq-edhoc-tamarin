@@ -6,6 +6,9 @@ This repository contains the symbolic models and automated verification workflow
 
 The models represent pairwise UAV–GCS and UAV–UAV executions of a post-quantum EDHOC variant. The artifact verifies agreement, key secrecy, freshness, injective agreement, session-key independence, forward secrecy, resistance to unknown-key-share attacks, and resistance to key-compromise impersonation.
 
+### Paper abstract
+> *Unmanned Aerial Vehicle (UAV) swarms require secure and efficient protocols for communication in dynamic and adversarial environments. This paper presents a post-quantum authenticated key exchange protocol for UAV swarm communications, inspired by recent post-quantum extensions of EDHOC. The protocol is modeled in SAPIC+ and verified in the Tamarin Prover under a Dolev–Yao adversary, establishing executability, mutual authentication, key secrecy, and forward secrecy properties. Communication overhead and handshake latency are evaluated using standardized parameter sizes and benchmark data for ARM Cortex-M4 and x86 platforms, showing how the choice of post-quantum primitives affects the feasibility of authenticated key exchange in constrained UAV deployments.* 
+
 ## Artifact contents
 
 | File | Purpose |
