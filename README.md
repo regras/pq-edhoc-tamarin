@@ -14,7 +14,7 @@ The models represent pairwise UAV–GCS and UAV–UAV executions of a post-quant
 The four badges sought are:
 
 * **Available:** The complete artifact is publicly available in this stable GitHub repository.
-* **Functional:** The repository provides pinned dependencies, a Docker environment, execution instructions, and a minimal test.
+* **Functional:** The repository provides dependencies, a Docker environment, execution instructions, and a minimal test.
 * **Sustainable:** The models and scripts are modular, documented, and organized so that the paper’s claims can be readily identified.
 * **Reproducible:** The workflows automate the experiments and validate all 20 expected verification results.
 
