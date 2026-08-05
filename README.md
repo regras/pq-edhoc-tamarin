@@ -155,4 +155,4 @@ The verification process makes intensive use of CPU and RAM; therefore, it may t
 
 ## License 
 
-This artifact is distributed under the GNU General Public License, v3. See the LICENSE file for the complete license information.
+This artifact is distributed under the GNU General Public License, version 3. See the LICENSE file for the complete license information.
