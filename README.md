@@ -1,4 +1,4 @@
-# Reproducible Tamarin Artifact for Post-Quantum EDHOC
+# Introduction
 
 This repository contains the symbolic models and automated verification workflow accompanying the paper:
 
@@ -18,8 +18,7 @@ The four badges sought are:
 * **Sustainable (Selo S):** The models and scripts are modular, documented, and organized so that the paper’s claims can be readily identified.
 * **Reproducible (Selo R):** The workflows automate the experiments and validate all 20 expected verification results.
 
-
-## Artifact contents
+## Repository structure
 
 | File | Purpose |
 | --- | --- |
@@ -30,18 +29,18 @@ The four badges sought are:
 | `expected/claims.tsv` | Machine-readable expected lemma results |
 | `SHA256SUMS` | Integrity hashes for the original model files |
 
-## Pinned verification environment
+## Dependencies
 
 | Component | Version |
 | --- | --- |
 | Node.js build stage | 20.19.5 |
 | Tamarin Prover | 1.13.0 |
-| Tamarin Git revision* | `3a523146116a70f1ee815401fb67ed6335baf44f` |
+| Tamarin Git revision | `3a523146116a70f1ee815401fb67ed6335baf44f` |
 | Maude | 3.5.1 |
 | Maude Linux archive SHA-256 | `72ed1ca87e3b3d0dfc6ee1436baf154bf04c45ff97d521bec040c5e8dfc8f92c` |
 | Container runtime | Ubuntu 24.04 |
 
-*The full Git revision is pinned because the version number alone does not uniquely identify a development build of Tamarin.
+The full Git revision is pinned because the version number alone does not uniquely identify a development build of Tamarin. The Dockerfile also verifies that revision and the downloaded Maude archive during the build.
 
 ## Requirements
 
@@ -50,49 +49,156 @@ The four badges sought are:
 - At least four CPU cores are recommended.
 - GNU Make is optional; the equivalent Docker commands are provided below.
 
-## Quick reproduction
+## Installation
+
+Clone the repository and enter its directory:
 
 ```bash
 git clone https://github.com/regras/pq-edhoc-tamarin.git
 cd pq-edhoc-tamarin
+```
+
+Confirm that the Docker daemon is available to the current user:
+
+```bash
+docker version
+```
+
+Verify the model integrity hashes and build the image:
+
+```bash
+make check-models
 make build
-make reproduce
 ```
 
-The proof summaries and resource measurements are written to:
+`make build` repeats the integrity check before building `pq-edhoc-tamarin:1.0.0`. A successful build completes with exit status 0. If Docker reports permission denied while connecting to its socket, configure Docker access for the current account according to the host operating system or contact the system administrator, then start a new login session before retrying.
 
-```text
-results/environment.log
-results/core.log
-results/fs-kci.log
+## Minimal test 
+
+After the image has been built, run the environment test:
+
+```bash
+make versions
 ```
 
-At the end of a successful execution, the validator should report:
+This starts the image, prints the installed Tamarin and Maude versions, executes Tamarin's built-in test, and writes `results/environment.log`. The command should exit with status 0 and report Tamarin 1.13.0 and Maude 3.5.1. It does not execute either full protocol model and should normally finish much faster than the complete experiment.
 
-```text
-Validation successful: 20 expected result(s) found.
+Review the recorded output if desired:
+
+```bash
+cat results/environment.log
 ```
 
-The reference execution used Ubuntu 24.04.4 LTS, four Intel Xeon Gold 6526Y CPU cores, and a total of 64 GiB of available RAM. The complete verification took approximately 15 min 45.35 s. Runtime is hardware-dependent; the reproducible outcomes are the verified lemma results, not identical execution times.
+## Experiments 
 
-## Running the models separately
+The experiments below reproduce the paper's symbolic formal verification claims. Both use the same Tamarin options; no configuration file or parameter needs to be edited.
 
-Core model:
+### Common verification configuration
+
+| Option | Value | Purpose |
+| --- | --- | --- |
+| Proof mode | `--prove` | Prove all lemmas in the selected theory |
+| Heuristic | `--heuristic=S` | Use the published proof-search heuristic |
+| Derivation-check timeout | `--derivcheck-timeout=240` | Allow up to 240 seconds for each derivation check |
+| Tamarin option | `-c=12` | Use the setting recorded in the artifact workflow |
+| Tamarin option | `-s=8` | Use the setting recorded in the artifact workflow |
+
+The full reference workflow required approximately 16 minutes on four reference CPU cores. Each individual command below executes only one part of that workflow. Both experiments use the same recommendation of four CPU cores, 16 GiB RAM, and 20 GiB free disk space, although actual peak use and wall time depend on the host and Docker cache.
+
+### Claim 1 — Core protocol execution and security properties
+
+Run:
 
 ```bash
 make core
 ```
 
-Forward secrecy, UKS, and KCI model:
+This executes `models/pq_edhoc_core_model.spthy`, writes `results/core.log`, and validates 13 expected results:
+
+| Claim group | Expected verified lemmas |
+| --- | --- |
+| Executability | `executable_full_run` |
+| Agreement and key agreement | `agreement_I_to_R`, `agreement_R_to_I`, `commit_agreement_R_to_I`, `key_agreement` |
+| PRK_out secrecy | `secrecy_PRK_out_I`, `secrecy_PRK_out_R` |
+| Freshness | `freshness_AcceptI`, `freshness_AcceptR`, `freshness_CommitI`, `freshness_CommitR` |
+| Stronger authentication and key independence | `injective_agreement_R_to_I`, `session_key_independence` |
+
+Expected final validator output:
+
+```text
+Validation successful: 13 expected result(s) found.
+```
+
+### Claim 2 — Forward secrecy and compromise resistance
+
+Run:
 
 ```bash
 make fs-kci
 ```
 
-Display and test the installed verification tools without running the models:
+This executes `models/pq_edhoc_compromise_model.spthy`, writes `results/fs-kci.log`, and validates seven expected results:
+
+| Claim group | Expected verified lemmas |
+| --- | --- |
+| PRK_out secrecy | `secrecy_PRK_out_I`, `secrecy_PRK_out_R` |
+| Forward secrecy | `forward_secrecy_I`, `forward_secrecy_R` |
+| Unknown-key-share resistance | `no_unknown_key_share` |
+| Key-compromise impersonation resistance | `kci_resistance_I`, `kci_resistance_R` |
+
+Expected final validator output:
+
+```text
+Validation successful: 7 expected result(s) found.
+```
+
+### Complete reproduction
+
+To reproduce both claim groups in one command:
 
 ```bash
-make versions
+make reproduce
+```
+
+Expected final validator output:
+
+```text
+Validation successful: 20 expected result(s) found.
+```
+
+The validator checks lemma names and statuses against `expected/claims.tsv`. It intentionally ignores proof-step counts, execution times, and peak-memory values because these may vary across systems.
+
+After the complete reproduction, validation can be repeated without rerunning Tamarin:
+
+```bash
+make validate
+```
+
+For an individual experiment, use the corresponding validator mode:
+
+```bash
+./scripts/validate-results.sh core
+./scripts/validate-results.sh fs-kci
+```
+
+### Exact Tamarin commands
+
+For transparency, the container invokes the models as follows:
+
+```bash
+tamarin-prover models/pq_edhoc_core_model.spthy \
+  --prove \
+  --heuristic=S \
+  --derivcheck-timeout=240 \
+  -c=12 \
+  -s=8
+
+tamarin-prover models/pq_edhoc_compromise_model.spthy \
+  --prove \
+  --heuristic=S \
+  --derivcheck-timeout=240 \
+  -c=12 \
+  -s=8
 ```
 
 ## Direct Docker commands
@@ -127,7 +233,7 @@ tamarin-prover models/pq_edhoc_core_model.spthy \
   -s=8
 ```
 
-The compromise-aware model uses the same options:
+The compromise model uses the same options:
 
 ```bash
 tamarin-prover models/pq_edhoc_compromise_model.spthy \
